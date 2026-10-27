@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Ethics</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  min-height: 100vh;
+  background: #ffffff;
+  font-family: 'Inter', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+  padding-top: 28vh;
+}
+.launch-btn {
+  font-size: 32px;
+  font-weight: bold;
+  color: #222;
+  text-decoration: none;
+  letter-spacing: 1px;
+  padding: 16px 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+}
+.launch-btn:hover { color: #d00; }
+.launch-btn:disabled { color: #999; cursor: default; border-bottom-color: transparent; }
+
+/* 진행 상태 영역 */
+#progressArea {
+  display: none;
+  margin-top: 20px;
+  text-align: center;
+}
+
+/* 프로그레스 바 */
+.progress-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: #ddd;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #1976d2, #42a5f5);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+/* 로그 영역 */
+#logArea {
+  text-align: left;
+  font-size: 16px;
+  color: #888;
+  line-height: 2;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 0 4px;
+}
+#logArea .log-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  transition: opacity 0.3s, color 0.3s;
+}
+#logArea .log-icon {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 2;
+  transition: color 0.3s;
+}
+#logArea .log-text {
+  flex: 1;
+  transition: color 0.3s;
+}
+
+/* 대기 상태 */
+#logArea .log-line.pending .log-icon { color: #ccc; }
+#logArea .log-line.pending .log-text { color: #bbb; }
+
+/* 진행 중 */
+#logArea .log-line.active .log-icon { color: #1976d2; }
+#logArea .log-line.active .log-text { color: #333; font-weight: 500; }
+
+/* 완료 */
+#logArea .log-line.done .log-icon { color: #2e7d32; }
+#logArea .log-line.done .log-text { color: #666; }
+
+/* 에러 */
+#logArea .log-line.error .log-icon { color: #c62828; }
+#logArea .log-line.error .log-text { color: #c62828; }
+
+/* 카운트다운 */
+#logArea .log-line.countdown .log-icon { color: #1976d2; }
+#logArea .log-line.countdown .log-text { color: #1976d2; font-weight: 600; }
+
+/* spinning 애니메이션 */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.log-line.active .log-icon {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+/* 에러 메시지 */
+#errorMsg {
+  display: none;
+  margin-top: 16px;
+  color: #c62828;
+  font-size: 14px;
+  text-align: center;
+  line-height: 1.6;
+}
+#retryBtn {
+  margin-top: 8px;
+  padding: 8px 24px;
+  font-size: 14px;
+  border: 1px solid #c62828;
+  background: #fff;
+  color: #c62828;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+#retryBtn:hover { background: #ffebee; }
+</style>
+</head>
+<body>
+
+<button class="launch-btn" id="launchBtn" onclick="startLoading()">AI_Ethics_Analyzer</button>
+
+<div id="progressArea">
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-fill" id="progressBar"></div>
+  </div>
+  <div id="logArea"></div>
+</div>
+
+<div id="errorMsg">
+  <div id="errorText"></div>
+  <button id="retryBtn" onclick="startLoading()">Retry</button>
+</div>
+
+<script>
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyVeQrWXrfb6pz390b33Pm-sze00tBb5xVN99zIeTWYHar_T5Ykt2Xcuw_XSMmHZG6T_Q/exec';
+
+const COL_NAMES = [
+  'A','B','C','D','E','F',
+  'G','H','I','J','K','L','M','N','O','P',
+  'Q','R','S','T','U','V','W','X','Y','Z',
+  'AA','AB','AC','AD','AE','AF','AG','AH','AI','AJ',
+  'AK','AL','AM','AN','AO','AP','AQ','AR','AS','AT',
+  'AU','AV'
+];
+
+// ── 전체 단계 정의 (세분화) ──
+const STEPS = [
+  { id: 'step-connect',      text: 'Connecting to server' },
+  { id: 'step-code-fetch',   text: 'Fetching Code tab' },
+  { id: 'step-code-parse',   text: 'Parsing Code tab data' },
+  { id: 'step-data-fetch',   text: 'Fetching Data tab' },
+  { id: 'step-data-receive', text: 'Receiving response' },
+  { id: 'step-data-parse',   text: 'Parsing records' },
+  { id: 'step-validate',     text: 'Validating data' },
+  { id: 'step-save',         text: 'Saving to session' },
+  { id: 'step-redirect',     text: 'Redirecting' },
+];
+
+const ICONS = { pending: '○', active: '◎', done: '✔', error: '✖' };
+
+// ── 단계 상태 변경 ──
+function setStepState(stepId, state, extraText) {
+  var el = document.getElementById(stepId);
+  if (!el) return;
+  el.className = 'log-line ' + state;
+  el.querySelector('.log-icon').textContent = ICONS[state] || '';
+  if (extraText) {
+    el.querySelector('.log-text').textContent = extraText;
+  }
+}
+
+// ── 전체 단계 미리 렌더링 ──
+function renderAllSteps() {
+  var logArea = document.getElementById('logArea');
+  logArea.innerHTML = '';
+  for (var i = 0; i < STEPS.length; i++) {
+    var s = STEPS[i];
+    var div = document.createElement('div');
+    div.id = s.id;
+    div.className = 'log-line pending';
+    div.innerHTML = '<span class="log-icon">' + ICONS.pending + '</span><span class="log-text">' + s.text + '</span>';
+    logArea.appendChild(div);
+  }
+}
+
+function setProgress(pct) {
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+
+// ── 재시도 fetch 래퍼 ──
+async function fetchWithRetry(url, options = {}, maxRetries = 3, timeoutMs = 30000) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const resp = await fetch(url, { ...options, signal: controller.signal, cache: 'no-store' });
+      clearTimeout(timeoutId);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp;
+    } catch(e) {
+      clearTimeout(timeoutId);
+      lastError = e;
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, attempt * 1000));
+      }
+    }
+  }
+  throw lastError;
+}
+
+// ── GAS 날짜 정규화 ──
+function normalizeGASValue(val) {
+  if (!val || typeof val !== 'string') return val || '';
+  const s = val.trim();
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}/);
+  if (isoMatch) return isoMatch[1] + '/' + isoMatch[2] + '/' + isoMatch[3];
+  const jsDateMatch = s.match(/^[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})\s+\d{2}:\d{2}:\d{2}/);
+  if (jsDateMatch) {
+    const months = {Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+    return jsDateMatch[3] + '/' + (months[jsDateMatch[1]] || '01') + '/' + jsDateMatch[2].padStart(2, '0');
+  }
+  return s;
+}
+
+// ── 메인 로딩 (순차 처리) ──
+async function startLoading() {
+  var btn = document.getElementById('launchBtn');
+  var progressArea = document.getElementById('progressArea');
+  var errorMsg = document.getElementById('errorMsg');
+
+  btn.disabled = true;
+  errorMsg.style.display = 'none';
+  progressArea.style.width = Math.max(btn.offsetWidth, 320) + 'px';
+  progressArea.style.display = 'block';
+  setProgress(0);
+
+  // 전체 단계를 미리 표시
+  renderAllSteps();
+
+  var allData = [];
+  var codeTabData = [];
+
+  try {
+    // 1) 서버 연결
+    setStepState('step-connect', 'active', 'Connecting to server...');
+    setProgress(5);
+    var codeResp = await fetchWithRetry(GAS_URL + '?tab=Code&t=' + Date.now());
+    setStepState('step-connect', 'done', 'Server connected');
+
+    // 2) Code 탭 데이터 수신
+    setStepState('step-code-fetch', 'active', 'Fetching Code tab...');
+    setProgress(15);
+    var codeJson = await codeResp.json();
+    setStepState('step-code-fetch', 'done', 'Code tab fetched');
+
+    // 3) Code 탭 파싱
+    setStepState('step-code-parse', 'active', 'Parsing Code tab data...');
+    setProgress(25);
+    if (codeJson.status === 'ok' && codeJson.tabData) {
+      for (var i = 1; i < codeJson.tabData.length; i++) {
+        var row = codeJson.tabData[i];
+        var code = (row[0] || '').trim();
+        if (!code) continue;
+        codeTabData.push({
+          code: code,
+          descs: [(row[1]||'').trim(), (row[2]||'').trim(), (row[3]||'').trim(), (row[4]||'').trim()],
+          rowIndex: i + 1
+        });
+      }
+    }
+    setStepState('step-code-parse', 'done', codeTabData.length + ' codes parsed');
+
+    // 4) Data 탭 요청
+    setStepState('step-data-fetch', 'active', 'Fetching Data tab...');
+    setProgress(35);
+    var dataResp = await fetchWithRetry(GAS_URL + '?t=' + Date.now());
+    setStepState('step-data-fetch', 'done', 'Data tab fetched');
+
+    // 5) Data 탭 응답 수신
+    setStepState('step-data-receive', 'active', 'Receiving response...');
+    setProgress(45);
+    var dataText = await dataResp.text();
+    setStepState('step-data-receive', 'done', 'Response received (' + Math.round(dataText.length / 1024) + ' KB)');
+
+    // 6) Data 레코드 파싱
+    setStepState('step-data-parse', 'active', 'Parsing records...');
+    setProgress(55);
+    var dataJson;
+    try { dataJson = JSON.parse(dataText); } catch(pe) {
+      throw new Error('JSON parse failed — possible GAS script error');
+    }
+    if (dataJson.status !== 'ok') throw new Error(dataJson.message || 'GAS status not ok');
+    var rows = dataJson.data;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (r.A && r.A.trim() === 'Ready') continue;
+      var rawArr = COL_NAMES.map(function(c) { return normalizeGASValue(r[c]); });
+      allData.push({
+        rowNum: r.rowNum,
+        raw: rawArr,
+        A: normalizeGASValue(r.A),
+        B: normalizeGASValue(r.B),
+        C: normalizeGASValue(r.C),
+        D: normalizeGASValue(r.D),
+        E: normalizeGASValue(r.E),
+        F: normalizeGASValue(r.F),
+        G: normalizeGASValue(r.G),
+        H: normalizeGASValue(r.H),
+      });
+    }
+    setStepState('step-data-parse', 'done', allData.length + ' records parsed');
+
+    // 7) 데이터 유효성 검증
+    setStepState('step-validate', 'active', 'Validating data...');
+    setProgress(70);
+    var validCount = 0;
+    for (var i = 0; i < allData.length; i++) {
+      if (allData[i].A && allData[i].rowNum) validCount++;
+    }
+    setStepState('step-validate', 'done', validCount + ' / ' + allData.length + ' records valid');
+
+    // 8) sessionStorage에 저장
+    setStepState('step-save', 'active', 'Saving to session...');
+    setProgress(85);
+    try {
+      sessionStorage.setItem('aiethics_allData', JSON.stringify(allData));
+      sessionStorage.setItem('aiethics_codeTabData', JSON.stringify(codeTabData));
+      sessionStorage.setItem('aiethics_loadTime', Date.now().toString());
+      setStepState('step-save', 'done', 'Session saved');
+    } catch(storageErr) {
+      setStepState('step-save', 'error', 'Session save failed — will load directly');
+    }
+
+    // 9) 카운트다운 후 페이지 이동
+    setProgress(100);
+    for (var sec = 3; sec >= 1; sec--) {
+      setStepState('step-redirect', 'countdown', 'Redirecting in ' + sec + 's...');
+      await new Promise(function(r) { setTimeout(r, 1000); });
+    }
+
+    window.location.href = 'ai_ethics_analyze_tool.html';
+
+  } catch(err) {
+    console.error('로딩 실패:', err);
+    var activeEls = document.querySelectorAll('#logArea .log-line.active');
+    activeEls.forEach(function(el) {
+      el.className = 'log-line error';
+      el.querySelector('.log-icon').textContent = ICONS.error;
+    });
+    document.getElementById('errorText').textContent =
+      'Unable to connect to the GAS server.\n(' + err.message + ')\n\nPlease check your network and try again.';
+    errorMsg.style.display = 'block';
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
